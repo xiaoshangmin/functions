@@ -2,7 +2,7 @@
 /*
  * @Author: xsm
  * @Date: 2020-03-02 10:29:13
- * @LastEditTime: 2020-03-10 19:32:31
+ * @LastEditTime: 2020-03-12 14:59:26
  * @Description: Linux下php实现守护进程
  */
 
@@ -20,7 +20,12 @@ class Daemon
     /**
      * pid文件路径
      */
-    private string $_pidFile = 'run.pid';
+    private string $_pidFile;
+
+    /**
+     * 日志文件
+     */
+    public string $logFile;
 
     /**
      * 命令行参数
@@ -31,9 +36,9 @@ class Daemon
 
 
     /**
-     * 动作  stop/start  restart
+     * 动作  stop/start 
      */
-    private string $action;
+    private string $_action;
 
     /**
      * 可创建的最大子进程数
@@ -42,44 +47,55 @@ class Daemon
      */
     public int $_maxChild = 5;
 
+
     function __construct()
     {
         $argv = $_SERVER['argv'];
         $argc = $_SERVER['argc'];
-
         if ($argc > 1) {
             $params = array_slice($argv, 1);
             foreach ($params as $k => $v) {
                 $this->_parseArgument($v);
             }
         }
-        if ('stop' == $this->_argument['a']) {
+
+        $this->_pidFile = __DIR__ . DIRECTORY_SEPARATOR . 'run.pid';
+
+        $this->logFile = __DIR__ . DIRECTORY_SEPARATOR . 'daemon.log';
+
+        $this->_action = $this->_argument['a'] ?? 'start';
+        if ('stop' == $this->_action) {
             $this->stop();
-        } elseif ('start' == $this->_argument['a']) {
+        } elseif ('start' == $this->_action) {
+            // declare(ticks=1);
+            pcntl_signal(SIGINT, array($this, "signal"));
             $this->start();
         }
     }
 
-
-    public function start()
+    /**
+     * 启动
+     *
+     * @return void
+     */
+    public function start(): void
     {
         $this->_maxChild = $this->_argument['max'] ?? 1;
         $pid = pcntl_fork();
         if ($pid == -1) {
-            echo "无法创建子进程";
+            $this->log("无法创建子进程");
             exit();
         } elseif ($pid) {
             exit(0);
         }
-        pcntl_signal(SIGINT, array($this, "signal"));
         $this->run();
     }
 
-    function run()
+    function run(): void
     {
         $str = "初始化的程序和参数";
         $p =  posix_getpid();
-        echo "父进程的->id：{$p}" . PHP_EOL;
+        $this->log("父进程的->id：{$p}");
         file_put_contents($this->_pidFile, $p, LOCK_EX);
         while ($this->checkPid()) {
             $pid = pcntl_fork();
@@ -89,38 +105,61 @@ class Daemon
                     continue;
                 }
                 $pid = pcntl_wait($status);
-                echo "监听子进程：{$pid}，退出" . PHP_EOL;
+                $log = "监听子进程：{$pid}，退出";
+                $this->log($log);
                 $this->_total--;
             }
             if (-1 == $pid) {
-                echo "无法创建子进程" . PHP_EOL;
+                $log = "无法创建子进程";
+                $this->log($log);
                 exit(1);
             }
             if (!$pid) {
                 $this->doSomething($str);
             }
         }
+        $this->dispatch();
     }
 
+    /**
+     * 业务逻辑
+     *
+     * @param [type] $str
+     * @return void
+     */
     function doSomething($str)
     {
         $id = posix_getpid();
         for ($i = 0; $i < 10; $i++) {
-            echo $str . "-子进程:{$id}-{$i}" . PHP_EOL;
-            sleep(2);
+            $log =  $str . "-子进程:{$id}-{$i}" . PHP_EOL;
+            $this->log($log);
+            sleep(1);
         }
-        echo "子进程执行10次后退出:{$id}-{$i}" . PHP_EOL;
+        $log =  "子进程执行10次后退出:{$id}-{$i}" . PHP_EOL;
+        $this->log($log);
         exit(0);
     }
 
-    public function stop()
+    /**
+     * 停止
+     *
+     * @return void
+     */
+    public function stop(): void
     {
         if (!$this->checkPid()) {
+            $log = $this->_pidFile . ",does not exists\n";
+            $this->log($log);
             exit(1);
         }
         $this->delPid();
     }
 
+    /**
+     * 检测进程id是否存在
+     *
+     * @return boolean
+     */
     public function checkPid(): bool
     {
         $pid = $this->getPid();
@@ -130,15 +169,25 @@ class Daemon
         return file_exists('/proc/' . $pid);
     }
 
+    /**
+     * 获取进程号
+     *
+     * @return integer
+     */
     public function getPid(): int
     {
-        if (!is_file($this->_pidFile)) {
+        if (!is_file($this->_pidFile) || !file_exists($this->_pidFile)) {
             return 0;
         }
         return (int) file_get_contents($this->_pidFile);
     }
 
-    public function delPid()
+    /**
+     * 退出进程&删除进程文件标识
+     *
+     * @return void
+     */
+    public function delPid(): void
     {
         $pid = $this->getPid();
         if ($pid) {
@@ -150,23 +199,40 @@ class Daemon
         }
     }
 
-    public function signal()
+    /**
+     * 分发调用信号处理器
+     *
+     * @return void
+     */
+    public function dispatch(): void
     {
-        file_put_contents('daemon.txt',"get signal and exit");
+        $this->log("do dispatch");
+        pcntl_signal_dispatch();
+    }
+
+    public function signal(): void
+    {
+        $this->log("get signal and exit");
     }
     /**
      * 解析参数
      * 
-     * @param string $param 参数数据
+     * @param string $params 参数数据
      * @return void
      */
-    public function _parseArgument(string $param): bool
+    public function _parseArgument(string $params): bool
     {
-        if (preg_match("/^-([a-zA-Z][a-zA-Z0-9_]*)(=([^=]+))?$/", $param, $out)) {
-            $this->_argument[$out[1]] = isset($out[3]) ? $out[3] : true;
+        if (preg_match("/^-([a-zA-Z][a-zA-Z0-9_]*)(=([^=]+))?$/", $params, $out)) {
+            $this->_argument[$out[1]] = $out[3] ?? true;
             return true;
         }
         return false;
+    }
+
+    public function log(string $msg = ''): void
+    {
+        $msg = date('Y-m-d H:i:s') . ":{$msg}\r\n";
+        file_put_contents($this->logFile, $msg, FILE_APPEND);
     }
 }
 new Daemon();

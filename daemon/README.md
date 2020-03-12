@@ -3,6 +3,6 @@
 
 ### 使用
 ```php
-    php Daemon.php -max=5 -a=start
-    php Daemon.php -a=stop
+    启动：php Daemon.php -max=5 -a=start
+    停止：php Daemon.php -a=stop
 ```
