@@ -20,7 +20,7 @@ class City
     {
         $pReg = "/<a href='((\d+)\.html)'>(\S+?)<br\/>/";
         $url = sprintf(self::URL, 'index.html', '');
-        $content = file_get_contents($url);
+        $content = $this->get($url);
         $content = iconv('gb2312', 'utf-8//IGNORE', $content);
         preg_match_all($pReg, $content, $match);
         $arr = [];
@@ -33,8 +33,9 @@ class City
                 'path' => $path,
                 'city' => $city
             ];
+            print_r($arr);
+            exit;
         }
-        print_r($arr);
     }
 
     //http://www.stats.gov.cn/tjsj/tjbz/tjyqhdmhcxhfdm/2020/11.html
@@ -42,7 +43,7 @@ class City
     {
         $cReg = "/<td><a href='([^']+)'>(\d+)<\/a><\/td><td><a href='[^']+'>(.*?)<\/a><\/td>/";
         $url = sprintf(self::URL, $path, '');
-        $content = file_get_contents($url);
+        $content = $this->get($url);
         $content = iconv('gb2312', 'utf-8//IGNORE', $content);
         preg_match_all($cReg, $content, $match);
         $arr = [];
@@ -64,7 +65,7 @@ class City
     {
         $cReg = "/<td><a href='([^']+)'>(\d+)<\/a><\/td><td><a href='[^']+'>(.*?)<\/a><\/td>/";
         $url = sprintf(self::URL, $path);
-        $content = file_get_contents($url);
+        $content = $this->get($url);
         $content = iconv('gb2312', 'utf-8//IGNORE', $content);
         preg_match_all($cReg, $content, $match);
         $arr = [];
@@ -86,7 +87,7 @@ class City
         $cReg = "/<td><a href='([^']+)'>(\d+)<\/a><\/td><td><a href='[^']+'>(.*?)<\/a><\/td>/";
         $path = $this->code . DIRECTORY_SEPARATOR . $path;
         $url = sprintf(self::URL, $path);
-        $content = file_get_contents($url);
+        $content = $this->get($url);
         $content = iconv('gb2312', 'utf-8//IGNORE', $content);
         preg_match_all($cReg, $content, $match);
         $arr = [];
@@ -108,9 +109,9 @@ class City
         $vReg = "/<tr[^>]+><td>(\d+)<\/td><td>[\d]+<\/td><td>(.*?)<\/td><\/tr>/";
         $path = $this->code . '/01' . DIRECTORY_SEPARATOR . $path;
         $url = sprintf(self::URL, $path);
-        $content = file_get_contents($url);
+        $content = $this->get($url);
         $content = iconv('gb2312', 'utf-8//IGNORE', $content);
-        preg_match_all($vReg, $content, $match); 
+        preg_match_all($vReg, $content, $match);
         $arr = [];
         foreach ($match[1] as $index => $path) {
             $arr[] = [
@@ -119,8 +120,22 @@ class City
                 'path' => $path,
             ];
         }
-        print_r($match);exit;
         return $arr;
+    }
+
+    public function get(string $url)
+    {
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        $data = curl_exec($ch);
+        if (curl_error($ch)) {
+            echo "Error:" . curl_error($ch);
+            die();
+        }
+        curl_close($ch);
+        return $data;
     }
 }
 
